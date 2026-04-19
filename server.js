@@ -1,4 +1,23 @@
 import express from "express";
+import Database from 'better-sqlite3';
+import bcrypt from "bcrypt"
+
+const db = new Database('ourApp.db');
+db.pragma('journal_mode = WAL');
+
+// seting up database
+const createTables = db.transaction(() => {
+    db.prepare(`
+        CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username STRING NOT NULL UNIQUE,
+        password STRING NOT NULL
+        )
+        `).run()
+})
+
+createTables()
+
 
 const app = express()
 app.set("view engine", "ejs")
@@ -44,14 +63,15 @@ app.post("/register", (req, res) => {
         return res.render("homepage", { errors })
     }
 
-    res.send("Thank you for filling out the form.")
+    // save new user into a database
+    const salt = bcrypt.genSaltSync(10)
+    req.body.password = bcrypt.hashSync(req.body.password, salt)
 
-    // save the new user into a database
-
+    const ourStatement = db.prepare("INSERT INTO users (username, password) VALUES (?, ?)")
+    ourStatement.run(req.body.username, req.body.password)
 
     // log the user in by giving them a cookie
-
-
+    res.send("Thank you for filling out the form.")
 
     // console.log("req:", req)
     // console.log("req.body:", req.body)
