@@ -1,9 +1,15 @@
+import dotenv from "dotenv";
 import express from "express";
 import Database from 'better-sqlite3';
 import bcrypt from "bcrypt"
+import cookieParser from "cookie-parser";
+import jwt from "jsonwebtoken"
+
+dotenv.config()
 
 const db = new Database('ourApp.db');
 db.pragma('journal_mode = WAL');
+
 
 // seting up database
 const createTables = db.transaction(() => {
@@ -23,10 +29,24 @@ const app = express()
 app.set("view engine", "ejs")
 app.use(express.urlencoded({ extended: false }))
 app.use(express.static("public"))
+app.use(cookieParser())
 
 // middleware: getting in the middle of a request
 app.use(function (req, res, next) {
     res.locals.errors = []
+
+    // try to decode incoming cookie
+    try {
+        const decoded = jwt.verify(req.cookies.ourSimpleApp, process.env.JWTSECRET)
+        req.user = decoded
+    } catch (erro) {
+        req.user = false
+    }
+
+    res.locals.user = req.user
+
+    console.log(req.user)
+
     next()
 })
 
@@ -68,9 +88,27 @@ app.post("/register", (req, res) => {
     req.body.password = bcrypt.hashSync(req.body.password, salt)
 
     const ourStatement = db.prepare("INSERT INTO users (username, password) VALUES (?, ?)")
-    ourStatement.run(req.body.username, req.body.password)
+    const result = ourStatement.run(req.body.username, req.body.password)
+
+    const lookupStatement = db.prepare("SELECT * FROM users WHERE ROWID = ?")
+    const ourUser = lookupStatement.get(result.lastInsertRowid)
 
     // log the user in by giving them a cookie
+    const ourTokenValue = jwt.sign({
+        exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24,
+        skyColor: "blue",
+        userid: ourUser.id,
+        username: ourUser.username
+    }, process.env.JWTSECRET)
+
+    res.cookie("ourSimpleApp", ourTokenValue, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "strict",
+        maxAge: 1000 * 60 * 60 * 24
+    })
+
+
     res.send("Thank you for filling out the form.")
 
     // console.log("req:", req)
